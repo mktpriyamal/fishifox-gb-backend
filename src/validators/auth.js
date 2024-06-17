@@ -22,7 +22,23 @@ const signup = (req, res, next) => {
         password: Joi.string()
             .trim()
             .pattern(new RegExp('^[a-zA-Z0-9]{6,30}$'))
-            .required()
+            .required(),
+        mobileNumber: Joi.string()
+            .trim()
+            .alphanum()
+            .min(10)
+            .max(12)
+            .required(),
+        nic: Joi.string()
+            .trim()
+            .alphanum()
+            .min(9)
+            .max(12)
+            .required(),
+        role: Joi.string()
+            .trim()
+            .alphanum()
+            .required(),
     });
     validatorHandler(req, res, next, schema);
 };

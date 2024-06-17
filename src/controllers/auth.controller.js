@@ -3,10 +3,10 @@ const { hash: hashPassword, compare: comparePassword } = require('../utils/passw
 const { generate: generateToken } = require('../utils/token');
 
 exports.signup = (req, res) => {
-    const { firstname, lastname, email, password } = req.body;
+    const { firstname, lastname, email, password,mobileNumber,nic,role } = req.body;
     const hashedPassword = hashPassword(password.trim());
 
-    const user = new User(firstname.trim(), lastname.trim(), email.trim(), hashedPassword);
+    const user = new User(firstname.trim(), lastname.trim(), email.trim(), hashedPassword,mobileNumber.trim(),nic.trim(),role.trim().toUpperCase());
 
     User.create(user, (err, data) => {
         if (err) {
@@ -29,6 +29,7 @@ exports.signup = (req, res) => {
 
 exports.signin = (req, res) => {
     const { email, password } = req.body;
+    console.log(email,password)
     User.findByEmail(email.trim(), (err, data) => {
         if (err) {
             if (err.kind === "not_found") {
@@ -45,15 +46,18 @@ exports.signin = (req, res) => {
             return;
         }
         if (data) {
-            if (comparePassword(password.trim(), data.password)) {
-                const token = generateToken(data.id);
+            if (comparePassword(password.trim(), data['PASSWORD'])) {
+                const token = generateToken(data['ID']);
                 res.status(200).send({
                     status: 'success',
                     data: {
                         token,
-                        firstname: data.firstname,
-                        lastname: data.lastname,
-                        email: data.email
+                        firstname: data['FIRST_NAME'],
+                        lastname: data['LAST_NAME'],
+                        email: data['EMAIL'],
+                        mobileNumber: data['MOBILE_NUMBER'],
+                        role: data['ROLE'],
+                        nic: data['NIC']
                     }
                 });
                 return;
