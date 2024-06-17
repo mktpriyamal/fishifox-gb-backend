@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { asyncHandler } = require('../middlewares/asyncHandler');
-const { create: createValidator, update: updateValidator } = require('../validators/dailyToken');
+const { create: createValidator, update: updateValidator } = require('../validators/dailytoken');
 const dailyTokenController = require('../controllers/dailyToken.controller');
 
 router.route('/')
