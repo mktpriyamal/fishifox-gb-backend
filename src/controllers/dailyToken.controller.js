@@ -1,4 +1,4 @@
-const DailyToken = require('../models/dailyToken.model');
+const DailyToken = require('../models/dailytoken.model');
 const { logger } = require('../utils/logger');
 
 exports.getAllDailyTokens = (req, res) => {
