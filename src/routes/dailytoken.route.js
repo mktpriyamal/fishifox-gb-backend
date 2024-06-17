@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { asyncHandler } = require('../middlewares/asyncHandler');
 const { create: createValidator, update: updateValidator } = require('../validators/dailytoken');
-const dailyTokenController = require('../controllers/dailyToken.controller');
+const dailyTokenController = require('../controllers/dailytoken.controller');
 
 router.route('/')
     .post(createValidator, asyncHandler(dailyTokenController.createDailyToken))

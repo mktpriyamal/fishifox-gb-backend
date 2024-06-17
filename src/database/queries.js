@@ -95,8 +95,9 @@ const addForeignKeyDailyToken = `
 `;
 
 const findDailyTokensByDate = `
-    SELECT * 
-    FROM DAILY_TOKEN 
+    SELECT DT.*,L.LETTER
+    FROM DAILY_TOKEN DT
+             LEFT JOIN LETTERS L on L.ID = DT.LETTER_ID
     WHERE DATE = ?
 `;
 
