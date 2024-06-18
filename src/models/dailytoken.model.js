@@ -4,8 +4,10 @@ const {
     findDailyTokenById: findDailyTokenByIdQuery,
     updateDailyToken: updateDailyTokenQuery,
     deleteDailyToken: deleteDailyTokenQuery,
+    deleteDailyTokenByDateAndLetter: deleteDailyTokenByDateAndLetterQuery,
     findDailyTokensByDate: findDailyTokensByDateQuery, // Import the new query
-    findAvailableTokensByDate: findAvailableTokensByDateQuery // Import the new query
+    findAvailableTokensByDate: findAvailableTokensByDateQuery, // Import the new query
+    allLetterTokensByDate: allLetterTokensByDateQuery // Import the new query
 } = require('../database/queries');
 const { logger } = require('../utils/logger');
 
@@ -19,6 +21,17 @@ class DailyToken {
 
     static findByDate(date, cb) {
         db.query(findDailyTokensByDateQuery, date, (err, res) => {
+            if (err) {
+                logger.error(err.message);
+                cb(err, null);
+                return;
+            }
+            cb(null, res);
+        });
+    }
+
+    static findTokensWithLettersByDate(date, cb) {
+        db.query(allLetterTokensByDateQuery, date, (err, res) => {
             if (err) {
                 logger.error(err.message);
                 cb(err, null);
@@ -95,6 +108,56 @@ class DailyToken {
             }
             cb(null, res);
         });
+    }
+
+    static async updateAllByDate(date, tokens, cb) {
+        try {
+            const results = await this.processItems(date, tokens);
+            console.log('All items saved or updated:', results);
+            cb(null, results);
+        } catch (error) {
+            console.error('Error inserting or updating data:', error);
+            cb(null, null);
+        }
+    }
+
+    static processItems(date,tokens) {
+        const promises = tokens.map(item => {
+            if (item['QUANTITY'] > 0 && item['PRICE'] > 0){
+                return new Promise((resolve, reject) => {
+                    // Check if record exists
+                    db.query('SELECT DT.* FROM DAILY_TOKEN DT LEFT JOIN LETTERS L on L.ID = DT.LETTER_ID WHERE DATE=? AND L.LETTER=? LIMIT 1', [date,item['LETTER']], (err, results) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            if (results.length > 0) {
+                                // Record exists, perform update
+                                db.query('UPDATE DAILY_TOKEN SET QUANTITY = ?, PRICE = ? WHERE DATE = ? AND LETTER_ID = (SELECT ID FROM LETTERS WHERE LETTER=?)',
+                                    [item['QUANTITY'], item['PRICE'], date, item['LETTER']], (err, updateResult) => {
+                                        if (err) {
+                                            reject(err);
+                                        } else {
+                                            resolve(updateResult);
+                                        }
+                                    });
+                            } else {
+                                // Record does not exist, perform insert
+                                db.query('INSERT INTO DAILY_TOKEN (LETTER_ID, QUANTITY, PRICE, DATE) VALUES ((SELECT ID FROM LETTERS WHERE LETTER=?), ?, ?, ?)',
+                                    [item['LETTER'], item['QUANTITY'], item['PRICE'], date], (err, insertResult) => {
+                                        if (err) {
+                                            reject(err);
+                                        } else {
+                                            resolve(insertResult);
+                                        }
+                                    });
+                            }
+                        }
+                    });
+                });
+            }
+        });
+
+        return Promise.all(promises);
     }
 }
 

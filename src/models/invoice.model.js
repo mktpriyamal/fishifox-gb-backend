@@ -6,161 +6,179 @@ const {
     deleteInvoice: deleteInvoiceQuery,
     createInvoiceToken: createInvoiceTokenQuery,
     removeInvoiceToken: removeInvoiceTokenQuery,
-    getAllInvoicesQuery: getAllInvoicesQuery
+    getAllInvoiceTokens: getAllInvoiceTokensQuery,
+    getAllInvoicesQuery: getAllInvoicesQuery,
+    findAvailableTokensMinDataByDate: findAvailableTokensMinDataByDateQuery,
+    getAllInvoicesByDate:getAllInvoicesByDateQuery,
+    getAllInvoiceTokensByDate:getAllInvoiceTokensByDateQuery
 } = require('../database/queries');
 const { logger } = require('../utils/logger');
+const { Mutex } = require('async-mutex');
+
+// Create a mutex instance
+const createInvoiceMutex = new Mutex();
 
 class Invoice {
-    constructor(userId, mobileNumber, name, invoiceTokens = []) {
+    constructor(id,userId, agent, mobileNumber, name, invoiceTokens = [],createdAt) {
+        this.id = id;
         this.userId = userId;
+        this.agent = agent;
         this.mobileNumber = mobileNumber;
         this.name = name;
         this.invoiceTokens = invoiceTokens;
+        this.createdAt = createdAt;
     }
 
-    static getAll(cb) {
-        db.query(getAllInvoicesQuery, (err, res) => {
-            if (err) {
-                logger.error(err.message);
-                cb(err, null);
-                return;
-            }
-            const invoicesMap = new Map();
-
-            res.forEach(invoiceData => {
-                const invoiceId = invoiceData.ID;
-
-                if (!invoicesMap.has(invoiceId)) {
-                    // Create new invoice object if not already in the map
-                    const newInvoice = new Invoice(
-                        invoiceData.USER_ID,
-                        invoiceData.MOBILE_NUMBER,
-                        invoiceData.NAME
-                    );
-                    newInvoice.id = invoiceId;
-                    newInvoice.invoiceTokens = [];
-                    invoicesMap.set(invoiceId, newInvoice);
-                }
-
-                // Add token to the corresponding invoice in the map
-                const invoice = invoicesMap.get(invoiceId);
-                invoice.invoiceTokens.push({
-                    tokenId: invoiceData.TOKEN_ID,
-                    quantity: invoiceData.QUANTITY
-                });
+    static async getAll(cb) {
+        try {
+            const invoiceResults = await db.queryPromise(getAllInvoicesQuery);
+            const invoiceTokenResults = await db.queryPromise(getAllInvoiceTokensQuery);
+            const invoices = Array();
+            invoiceResults.forEach(invoiceData => {
+                const invoice = new Invoice(
+                    invoiceData['ID'],
+                    invoiceData['USER_ID'],
+                    invoiceData['FIRST_NAME'],
+                    invoiceData['MOBILE_NUMBER'],
+                    invoiceData['NAME'],
+                    [],
+                    invoiceData['CREATED_AT']
+                )
+                let filteredTokens = invoiceTokenResults.filter((invoiceToken) => invoiceToken['INVOICE_ID'] === invoiceData['ID']);
+                filteredTokens.forEach(invoiceToken => {
+                    //console.log(invoiceToken);
+                    invoice.invoiceTokens.push({
+                        id:invoiceToken.ID,
+                        invoiceId:invoiceToken['INVOICE_ID'] ,
+                        tokenId:invoiceToken['TOKEN_ID'] ,
+                        letter:invoiceToken['LETTER'] ,
+                        quantity:invoiceToken['QUANTITY'] ,
+                        price :invoiceToken['PRICE'] ,
+                    })
+                })
+                invoices.push(invoice);
             });
-
-            // Convert map values (invoices) to array and pass to callback
-            const invoices = Array.from(invoicesMap.values());
             cb(null, invoices);
-        });
+        } catch (err) {
+            logger.error(err.message);
+            cb(err, null);
+        }
     }
 
-    static create(newInvoice, cb) {
-        db.beginTransaction((err) => {
-            if (err) {
-                logger.error(err.message);
-                cb(err, null);
-                return;
+    static async create(newInvoice, cb) {
+        const release = await createInvoiceMutex.acquire();
+        try {
+            const formattedDate = Invoice.getCurrentDateFormatted();
+            await db.beginTransactionPromise()
+            const availableTokens = await db.queryPromise(findAvailableTokensMinDataByDateQuery, [formattedDate]);
+            const allIdsContained = newInvoice.invoiceTokens.every(token =>
+                availableTokens.some(result => result['LETTER'] === token.letter && result['AQ'] >= token.quantity)
+            );
+            if (!allIdsContained) {
+                throw new Error('Some Letters are not available!');
             }
-            db.query(createNewInvoiceQuery, [newInvoice.userId, newInvoice.mobileNumber, newInvoice.name], (err, res) => {
-                if (err) {
-                    db.rollback(() => {
-                        logger.error(err.message);
-                        cb(err, null);
-                    });
-                    return;
-                }
-                const invoiceId = res.insertId;
-                const tokenData = newInvoice.invoiceTokens.flatMap(token => [invoiceId, token.tokenId, token.quantity]);
-                db.query(createInvoiceTokenQuery, tokenData, (err, _) => {
-                    if (err) {
-                        db.rollback(() => {
-                            logger.error(err.message);
-                            cb(err, null);
-                        });
-                        return;
-                    }
-                    db.commit((err) => {
-                        if (err) {
-                            db.rollback(() => {
-                                logger.error(err.message);
-                                cb(err, null);
-                            });
-                            return;
-                        }
-                        cb(null, { id: invoiceId, ...newInvoice });
-                    });
-                });
-            });
-        });
+            console.log(newInvoice)
+            const invoiceResult = await db.queryPromise(createNewInvoiceQuery, [newInvoice.userId, newInvoice.mobileNumber, newInvoice.name]);
+            const invoiceId = invoiceResult.insertId;
+
+            for (const invoiceToken of newInvoice.invoiceTokens) {
+                await db.queryPromise(createInvoiceTokenQuery, [invoiceId, invoiceToken.tokenId, invoiceToken.quantity]);
+            }
+
+            await db.commitPromise();
+            cb(null, { id: invoiceId, ...newInvoice });
+        } catch (err) {
+            await db.rollbackPromise();
+            logger.error(err.message);
+            cb(err, null);
+        } finally {
+            release(); // Release the mutex
+        }
     }
 
-    static findById(id, cb) {
-        db.query(findInvoiceByIdQuery, id, (err, res) => {
-            if (err) {
-                logger.error(err.message);
-                cb(err, null);
-                return;
-            }
+    static async findById(id, cb) {
+        try {
+            const res = await db.queryPromise(findInvoiceByIdQuery, id);
             if (res.length) {
                 const invoiceData = res[0];
-                const invoice = new Invoice(invoiceData.user_id, invoiceData.mobile_number, invoiceData.name);
+                const invoice = new Invoice(invoiceData.user_id, invoiceData.first_name, invoiceData.mobile_number, invoiceData.name);
                 invoice.id = invoiceData.id;
                 cb(null, invoice);
                 return;
             }
             cb({ kind: "not_found" }, null);
-        });
+        } catch (err) {
+            logger.error(err.message);
+            cb(err, null);
+        }
     }
 
-    static update(id, updatedInvoice, cb) {
-        db.query(updateInvoiceQuery, [updatedInvoice.userId, updatedInvoice.mobileNumber, updatedInvoice.name, id], (err, res) => {
-            if (err) {
-                logger.error(err.message);
-                cb(err, null);
-                return;
-            }
+    static async update(id, updatedInvoice, cb) {
+        try {
+            await db.queryPromise(updateInvoiceQuery, [updatedInvoice.userId, updatedInvoice.mobileNumber, updatedInvoice.name, id]);
             cb(null, { id: id, ...updatedInvoice });
-        });
+        } catch (err) {
+            logger.error(err.message);
+            cb(err, null);
+        }
     }
 
-    static delete(id, cb) {
-        db.beginTransaction((err) => {
-            if (err) {
-                logger.error(err.message);
-                cb(err, null);
-                return;
-            }
-            db.query(deleteInvoiceQuery, id, (err, res) => {
-                if (err) {
-                    db.rollback(() => {
-                        logger.error(err.message);
-                        cb(err, null);
-                    });
-                    return;
-                }
-                db.query(removeInvoiceTokenQuery, id, (err, _) => {
-                    if (err) {
-                        db.rollback(() => {
-                            logger.error(err.message);
-                            cb(err, null);
-                        });
-                        return;
-                    }
-                    db.commit((err) => {
-                        if (err) {
-                            db.rollback(() => {
-                                logger.error(err.message);
-                                cb(err, null);
-                            });
-                            return;
-                        }
-                        cb(null, res);
-                    });
-                });
+    static async delete(id, cb) {
+        try {
+            await db.beginTransactionPromise();
+            await db.queryPromise(deleteInvoiceQuery, id);
+            await db.queryPromise(removeInvoiceTokenQuery, id);
+            await db.commitPromise();
+            cb(null, { message: 'Invoice deleted successfully!' });
+        } catch (err) {
+            await db.rollbackPromise();
+            logger.error(err.message);
+            cb(err, null);
+        }
+    }
+
+    static async findAllByDate(date, cb) {
+        try {
+            const invoiceResults = await db.queryPromise(getAllInvoicesByDateQuery,[date]);
+            const invoiceTokenResults = await db.queryPromise(getAllInvoiceTokensByDateQuery,[date]);
+            const invoices = Array();
+            invoiceResults.forEach(invoiceData => {
+                const invoice = new Invoice(
+                    invoiceData['ID'],
+                    invoiceData['USER_ID'],
+                    invoiceData['FIRST_NAME'],
+                    invoiceData['MOBILE_NUMBER'],
+                    invoiceData['NAME'],
+                    [],
+                    invoiceData['CREATED_AT']
+                )
+                let filteredTokens = invoiceTokenResults.filter((invoiceToken) => invoiceToken['INVOICE_ID'] === invoiceData['ID']);
+                filteredTokens.forEach(invoiceToken => {
+                    //console.log(invoiceToken);
+                    invoice.invoiceTokens.push({
+                        id:invoiceToken.ID,
+                        invoiceId:invoiceToken['INVOICE_ID'] ,
+                        tokenId:invoiceToken['TOKEN_ID'] ,
+                        letter:invoiceToken['LETTER'] ,
+                        quantity:invoiceToken['QUANTITY'] ,
+                        price :invoiceToken['PRICE'] ,
+                    })
+                })
+                invoices.push(invoice);
             });
-        });
+            cb(null, invoices);
+        } catch (err) {
+            logger.error(err.message);
+            cb(err, null);
+        }
+    }
+
+    static getCurrentDateFormatted() {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
 }
 

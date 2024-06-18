@@ -15,7 +15,11 @@ router.route('/:id')
 // New route for getting daily tokens by date
 router.route('/by-date/:date')
     .get(asyncHandler(dailyTokenController.getDailyTokensByDate))
-    .post(createValidator,asyncHandler(dailyTokenController.updateDailyTokenList));
+    .post(asyncHandler(dailyTokenController.updateDailyTokenList));
+
+router.route('/with-letter/by-date/:date')
+    .get(asyncHandler(dailyTokenController.findTokensWithLettersByDate));
+
 router.route('/available-by-date/:date')
     .get(asyncHandler(dailyTokenController.getAvailableDailyTokensByDate));
 

@@ -95,10 +95,22 @@ const addForeignKeyDailyToken = `
 `;
 
 const findDailyTokensByDate = `
-    SELECT DT.*,L.LETTER
-    FROM DAILY_TOKEN DT
-             LEFT JOIN LETTERS L on L.ID = DT.LETTER_ID
-    WHERE DATE = ?
+    SELECT L.LETTER,DT.ID,DT.LETTER_ID,DT.DATE,DT.PRICE,DT.QUANTITY
+    FROM LETTERS L 
+         LEFT JOIN DAILY_TOKEN DT on DT.LETTER_ID =L.ID
+    WHERE DT.DATE = ?
+`;
+
+const allLetterTokensByDate = `
+    SELECT L.LETTER AS LETTER,
+           COALESCE(DT.ID,0) AS ID,
+           L.ID AS LETTER_ID,
+           DT.DATE AS DATE,
+           COALESCE(DT.PRICE,0) AS PRICE,
+           COALESCE(DT.QUANTITY,0) AS QUANTITY
+    FROM LETTERS L
+             LEFT JOIN DAILY_TOKEN DT ON DT.LETTER_ID = L.ID AND DT.DATE = ?
+    WHERE L.ID IS NOT NULL;
 `;
 
 const createNewDailyToken = `
@@ -123,6 +135,10 @@ const deleteDailyToken = `
   WHERE ID = ?
 `;
 
+const deleteDailyTokenByDateAndLetter = `
+    DELETE FROM DAILY_TOKEN WHERE DATE=? AND LETTER_ID=(SELECT ID FROM LETTERS WHERE LETTER=?)
+`;
+
 const findAvailableTokensByDate = `
     SELECT
         DT.ID AS tokenId,
@@ -135,7 +151,19 @@ const findAvailableTokensByDate = `
     FROM DAILY_TOKEN DT
              LEFT JOIN LETTERS L on L.ID = DT.LETTER_ID
              LEFT JOIN INVOICE_TOKEN IT ON DT.ID = IT.TOKEN_ID
-    WHERE DATE=? GROUP BY DT.ID
+    WHERE DATE=? GROUP BY DT.ID HAVING availableQuantity > 0
+`;
+
+const findAvailableTokensMinDataByDate = `
+    SELECT
+        DT.ID,
+        L.LETTER,
+        DT.PRICE,
+        DT.QUANTITY - COALESCE(SUM(IT.QUANTITY),0) AS AQ
+    FROM DAILY_TOKEN DT
+             LEFT JOIN LETTERS L on L.ID = DT.LETTER_ID
+             LEFT JOIN INVOICE_TOKEN IT ON DT.ID = IT.TOKEN_ID
+    WHERE DATE=? GROUP BY DT.ID HAVING AQ > 0
 `;
 
 
@@ -165,17 +193,35 @@ const createInvoice = `
 `;
 
 const getAllInvoicesQuery = `
+    SELECT I.*,U.FIRST_NAME,U.LAST_NAME FROM INVOICE I LEFT JOIN USERS U on U.ID = I.USER_ID
+`;
+
+const getAllInvoiceTokens = `
     SELECT 
-        I.ID,
-        I.USER_ID,
-        I.MOBILE_NUMBER,
-        I.NAME,
-        T.TOKEN_ID,
-        T.QUANTITY
+        IT.*,DT.DATE,DT.PRICE,L.LETTER
     FROM
-        INVOICE I
-    LEFT JOIN 
-        INVOICE_TOKEN T ON I.ID = T.INVOICE_ID;
+        INVOICE_TOKEN IT
+            LEFT JOIN DAILY_TOKEN DT on IT.TOKEN_ID = DT.ID
+            LEFT JOIN LETTERS L on L.ID = DT.LETTER_ID
+`;
+
+const getAllInvoicesByDate = `
+    SELECT 
+        I.*,U.FIRST_NAME,U.LAST_NAME 
+    FROM INVOICE I 
+        LEFT JOIN USERS U on U.ID = I.USER_ID
+    WHERE I.CREATED_AT LIKE CONCAT(?, '%')
+`;
+
+const getAllInvoiceTokensByDate = `
+    SELECT 
+        IT.*,I.CREATED_AT,DT.DATE,DT.PRICE,L.LETTER
+    FROM
+        INVOICE_TOKEN IT
+            LEFT JOIN INVOICE I on I.ID = IT.INVOICE_ID
+            LEFT JOIN DAILY_TOKEN DT on IT.TOKEN_ID = DT.ID
+            LEFT JOIN LETTERS L on L.ID = DT.LETTER_ID
+    WHERE I.CREATED_AT LIKE CONCAT(?, '%')
 `;
 
 const findInvoiceById = `
@@ -272,6 +318,9 @@ module.exports = {
     updateDailyToken,
     deleteDailyToken,
     findAvailableTokensByDate,
+    allLetterTokensByDate,
+    findAvailableTokensMinDataByDate,
+    deleteDailyTokenByDateAndLetter,
 
     // Invoice table queries
     createTableInvoice,
@@ -282,6 +331,7 @@ module.exports = {
     updateInvoice,
     deleteInvoice,
     removeInvoiceToken,
+    getAllInvoicesByDate,
 
 
     // InvoiceToken table queries
@@ -289,5 +339,7 @@ module.exports = {
     addForeignKeyInvoiceToken,
     addForeignKeyDailyTokenToken,
     createInvoiceToken,
+    getAllInvoiceTokens,
     findInvoiceTokenById,
+    getAllInvoiceTokensByDate,
 };

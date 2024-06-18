@@ -52,6 +52,7 @@ exports.signin = (req, res) => {
                     status: 'success',
                     data: {
                         token,
+                        id: data['ID'],
                         firstname: data['FIRST_NAME'],
                         lastname: data['LAST_NAME'],
                         email: data['EMAIL'],

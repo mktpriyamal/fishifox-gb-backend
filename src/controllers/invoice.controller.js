@@ -1,5 +1,6 @@
 const Invoice = require('../models/invoice.model');
 const { logger } = require('../utils/logger');
+const DailyToken = require("../models/dailytoken.model");
 
 exports.getAllInvoices = (req, res) => {
     Invoice.getAll((err, data) => {
@@ -18,9 +19,8 @@ exports.getAllInvoices = (req, res) => {
 };
 
 exports.createInvoice = (req, res) => {
-    const { userId, mobileNumber, name, invoiceTokens } = req.body;
-    const newInvoice = new Invoice(userId, mobileNumber, name, invoiceTokens);
-
+    const {id, userId,agent, mobileNumber, name, invoiceTokens,createdAt } = req.body;
+    const newInvoice = new Invoice(id,userId,agent,mobileNumber,name,invoiceTokens,createdAt);
     Invoice.create(newInvoice, (err, data) => {
         if (err) {
             res.status(500).send({
@@ -29,7 +29,8 @@ exports.createInvoice = (req, res) => {
             });
             return;
         }
-        res.status(201).send({
+        console.log(data)
+        res.status(200).send({
             status: "success",
             data
         });
@@ -110,6 +111,23 @@ exports.deleteInvoice = (req, res) => {
         res.status(200).send({
             status: 'success',
             message: 'Invoice deleted successfully'
+        });
+    });
+};
+
+exports.findAllByDate = (req, res) => {
+    const { date } = req.params;
+    Invoice.findAllByDate(date, (err, data) => {
+        if (err) {
+            res.status(500).send({
+                status: 'error',
+                message: err.message
+            });
+            return;
+        }
+        res.status(200).send({
+            status: 'success',
+            data
         });
     });
 };

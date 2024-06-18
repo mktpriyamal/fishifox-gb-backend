@@ -149,10 +149,29 @@ exports.getAvailableDailyTokensByDate = (req, res) => {
     });
 };
 
+
+exports.findTokensWithLettersByDate = (req, res) => {
+    const { date } = req.params;
+    DailyToken.findTokensWithLettersByDate(date, (err, data) => {
+        if (err) {
+            res.status(500).send({
+                status: 'error',
+                message: err.message
+            });
+            return;
+        }
+        res.status(200).send({
+            status: 'success',
+            data
+        });
+    });
+};
+
 exports.updateDailyTokenList = (req, res) => {
-    const { date, tokens } = req.body;
-    console.log(req.body)
-    DailyToken.findAvailableByDate(date, (err, data) => {
+    const { date } = req.params;
+    const tokens = req.body;
+    console.log(tokens[0])
+    DailyToken.updateAllByDate(date,tokens, (err, data) => {
         if (err) {
             res.status(500).send({
                 status: 'error',
