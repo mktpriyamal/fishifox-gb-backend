@@ -9,8 +9,8 @@ const {
     getAllInvoiceTokens: getAllInvoiceTokensQuery,
     getAllInvoicesQuery: getAllInvoicesQuery,
     findAvailableTokensMinDataByDate: findAvailableTokensMinDataByDateQuery,
-    getAllInvoicesByDate:getAllInvoicesByDateQuery,
-    getAllInvoiceTokensByDate:getAllInvoiceTokensByDateQuery
+    getAllInvoicesByDate: getAllInvoicesByDateQuery,
+    getAllInvoiceTokensByDate: getAllInvoiceTokensByDateQuery
 } = require('../database/queries');
 const { logger } = require('../utils/logger');
 const { Mutex } = require('async-mutex');
@@ -19,7 +19,7 @@ const { Mutex } = require('async-mutex');
 const createInvoiceMutex = new Mutex();
 
 class Invoice {
-    constructor(id,userId, agent, mobileNumber, name, invoiceTokens = [],createdAt) {
+    constructor(id, userId, agent, mobileNumber, name, invoiceTokens = [], createdAt) {
         this.id = id;
         this.userId = userId;
         this.agent = agent;
@@ -33,7 +33,7 @@ class Invoice {
         try {
             const invoiceResults = await db.queryPromise(getAllInvoicesQuery);
             const invoiceTokenResults = await db.queryPromise(getAllInvoiceTokensQuery);
-            const invoices = Array();
+            const invoices = [];
             invoiceResults.forEach(invoiceData => {
                 const invoice = new Invoice(
                     invoiceData['ID'],
@@ -43,19 +43,18 @@ class Invoice {
                     invoiceData['NAME'],
                     [],
                     invoiceData['CREATED_AT']
-                )
-                let filteredTokens = invoiceTokenResults.filter((invoiceToken) => invoiceToken['INVOICE_ID'] === invoiceData['ID']);
+                );
+                let filteredTokens = invoiceTokenResults.filter(invoiceToken => invoiceToken['INVOICE_ID'] === invoiceData['ID']);
                 filteredTokens.forEach(invoiceToken => {
-                    //console.log(invoiceToken);
                     invoice.invoiceTokens.push({
-                        id:invoiceToken.ID,
-                        invoiceId:invoiceToken['INVOICE_ID'] ,
-                        tokenId:invoiceToken['TOKEN_ID'] ,
-                        letter:invoiceToken['LETTER'] ,
-                        quantity:invoiceToken['QUANTITY'] ,
-                        price :invoiceToken['PRICE'] ,
-                    })
-                })
+                        id: invoiceToken.ID,
+                        invoiceId: invoiceToken['INVOICE_ID'],
+                        tokenId: invoiceToken['TOKEN_ID'],
+                        letter: invoiceToken['LETTER'],
+                        quantity: invoiceToken['QUANTITY'],
+                        price: invoiceToken['PRICE'],
+                    });
+                });
                 invoices.push(invoice);
             });
             cb(null, invoices);
@@ -69,7 +68,8 @@ class Invoice {
         const release = await createInvoiceMutex.acquire();
         try {
             const formattedDate = Invoice.getCurrentDateFormatted();
-            await db.beginTransactionPromise()
+            const connection = await db.getConnectionPromise();
+            await db.beginTransactionPromise(connection);
             const availableTokens = await db.queryPromise(findAvailableTokensMinDataByDateQuery, [formattedDate]);
             const allIdsContained = newInvoice.invoiceTokens.every(token =>
                 availableTokens.some(result => result['LETTER'] === token.letter && result['AQ'] >= token.quantity)
@@ -77,7 +77,6 @@ class Invoice {
             if (!allIdsContained) {
                 throw new Error('Some Letters are not available!');
             }
-            console.log(newInvoice)
             const invoiceResult = await db.queryPromise(createNewInvoiceQuery, [newInvoice.userId, newInvoice.mobileNumber, newInvoice.name]);
             const invoiceId = invoiceResult.insertId;
 
@@ -85,7 +84,7 @@ class Invoice {
                 await db.queryPromise(createInvoiceTokenQuery, [invoiceId, invoiceToken.tokenId, invoiceToken.quantity]);
             }
 
-            await db.commitPromise();
+            await db.commitPromise(connection);
             cb(null, { id: invoiceId, ...newInvoice });
         } catch (err) {
             await db.rollbackPromise();
@@ -116,7 +115,7 @@ class Invoice {
     static async update(id, updatedInvoice, cb) {
         try {
             await db.queryPromise(updateInvoiceQuery, [updatedInvoice.userId, updatedInvoice.mobileNumber, updatedInvoice.name, id]);
-            cb(null, { id: id, ...updatedInvoice });
+            cb(null, { id, ...updatedInvoice });
         } catch (err) {
             logger.error(err.message);
             cb(err, null);
@@ -125,10 +124,11 @@ class Invoice {
 
     static async delete(id, cb) {
         try {
-            await db.beginTransactionPromise();
+            const connection = await db.getConnectionPromise();
+            await db.beginTransactionPromise(connection);
             await db.queryPromise(deleteInvoiceQuery, id);
             await db.queryPromise(removeInvoiceTokenQuery, id);
-            await db.commitPromise();
+            await db.commitPromise(connection);
             cb(null, { message: 'Invoice deleted successfully!' });
         } catch (err) {
             await db.rollbackPromise();
@@ -139,9 +139,9 @@ class Invoice {
 
     static async findAllByDate(date, cb) {
         try {
-            const invoiceResults = await db.queryPromise(getAllInvoicesByDateQuery,[date]);
-            const invoiceTokenResults = await db.queryPromise(getAllInvoiceTokensByDateQuery,[date]);
-            const invoices = Array();
+            const invoiceResults = await db.queryPromise(getAllInvoicesByDateQuery, [date]);
+            const invoiceTokenResults = await db.queryPromise(getAllInvoiceTokensByDateQuery, [date]);
+            const invoices = [];
             invoiceResults.forEach(invoiceData => {
                 const invoice = new Invoice(
                     invoiceData['ID'],
@@ -151,19 +151,18 @@ class Invoice {
                     invoiceData['NAME'],
                     [],
                     invoiceData['CREATED_AT']
-                )
-                let filteredTokens = invoiceTokenResults.filter((invoiceToken) => invoiceToken['INVOICE_ID'] === invoiceData['ID']);
+                );
+                let filteredTokens = invoiceTokenResults.filter(invoiceToken => invoiceToken['INVOICE_ID'] === invoiceData['ID']);
                 filteredTokens.forEach(invoiceToken => {
-                    //console.log(invoiceToken);
                     invoice.invoiceTokens.push({
-                        id:invoiceToken.ID,
-                        invoiceId:invoiceToken['INVOICE_ID'] ,
-                        tokenId:invoiceToken['TOKEN_ID'] ,
-                        letter:invoiceToken['LETTER'] ,
-                        quantity:invoiceToken['QUANTITY'] ,
-                        price :invoiceToken['PRICE'] ,
-                    })
-                })
+                        id: invoiceToken.ID,
+                        invoiceId: invoiceToken['INVOICE_ID'],
+                        tokenId: invoiceToken['TOKEN_ID'],
+                        letter: invoiceToken['LETTER'],
+                        quantity: invoiceToken['QUANTITY'],
+                        price: invoiceToken['PRICE'],
+                    });
+                });
                 invoices.push(invoice);
             });
             cb(null, invoices);
