@@ -16,7 +16,7 @@ const createTableUsers = `
         MOBILE_NUMBER VARCHAR(12),
         NIC           VARCHAR(12),
         ROLE          ENUM ('ADMIN', 'USER', 'CUSTOMER') NOT NULL,
-        CREATED_ON    TIMESTAMP(6)                       NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+        CREATED_ON    TIMESTAMP(6)                       NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (ID)
     )
 `;
@@ -175,7 +175,7 @@ const createTableInvoice = `
         USER_ID       INT,
         MOBILE_NUMBER VARCHAR(12)  NOT NULL,
         NAME          VARCHAR(50),
-        CREATED_AT    TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+        CREATED_AT    TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (ID),
         INDEX (USER_ID)
     )
