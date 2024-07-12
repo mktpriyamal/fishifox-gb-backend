@@ -1,4 +1,4 @@
-# NodeJS Auth REST API example with Express, Mysql, and JWT
+# NodeJS Auth REST API backend with Express, Mysql, and JWT
 
 ## Features
 1. User can sign up
@@ -18,6 +18,7 @@ Signup expects
     lastname: string,
     email: string,
     password: string
+    role:string
 }
 ```
 
